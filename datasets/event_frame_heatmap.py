@@ -39,6 +39,7 @@ class EventFrameHeatmapDataset(Dataset):
         labels_root: Path,
         length_events: int,
         sigma: float,
+        downsample_factor: int = 8,
         translate_px: int = 0,
         translate_prob: float = 0.0,
     ) -> None:
@@ -47,6 +48,7 @@ class EventFrameHeatmapDataset(Dataset):
         self.labels_root = labels_root
         self.length_events = length_events
         self.sigma = float(sigma)
+        self.downsample_factor = max(1, int(downsample_factor))
         self.translate_px = int(translate_px)
         self.translate_prob = float(translate_prob)
         self._rng = np.random.default_rng()
@@ -123,7 +125,14 @@ class EventFrameHeatmapDataset(Dataset):
         img_path, (x, y, _blink) = self.samples[idx]
 
         img = Image.open(img_path).convert("L")
+        orig_width, orig_height = img.size
+        factor = self.downsample_factor
+        target_width = max(1, orig_width // factor)
+        target_height = max(1, orig_height // factor)
+        img = img.resize((target_width, target_height), Image.BILINEAR)
         img_np = np.array(img, dtype=np.float32) / 255.0
+        x = float(x) / float(factor)
+        y = float(y) / float(factor)
         img_tensor = torch.from_numpy(img_np).unsqueeze(0)
 
         if self.translate_px > 0 and self._rng.random() < self.translate_prob:

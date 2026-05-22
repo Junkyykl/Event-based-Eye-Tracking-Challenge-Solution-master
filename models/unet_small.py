@@ -1,5 +1,6 @@
 from torch import nn
 import torch
+import torch.nn.functional as F
 
 
 class DoubleConv(nn.Module):
@@ -42,6 +43,33 @@ class UNetSmall(nn.Module):
 
         self.out_conv = nn.Conv2d(base_ch, out_ch, kernel_size=1)
 
+    def _match_size(self, x: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+        _, _, h, w = x.shape
+        _, _, rh, rw = ref.shape
+
+        if h > rh:
+            crop = h - rh
+            crop_top = crop // 2
+            crop_bottom = crop - crop_top
+            x = x[:, :, crop_top:h - crop_bottom, :]
+            h = rh
+
+        if w > rw:
+            crop = w - rw
+            crop_left = crop // 2
+            crop_right = crop - crop_left
+            x = x[:, :, :, crop_left:w - crop_right]
+            w = rw
+
+        if h < rh or w < rw:
+            pad_left = max((rw - w) // 2, 0)
+            pad_right = max(rw - w - pad_left, 0)
+            pad_top = max((rh - h) // 2, 0)
+            pad_bottom = max(rh - h - pad_top, 0)
+            x = F.pad(x, (pad_left, pad_right, pad_top, pad_bottom))
+
+        return x
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         e1 = self.enc1(x)
         e2 = self.enc2(self.pool1(e1))
@@ -50,10 +78,13 @@ class UNetSmall(nn.Module):
         b = self.bottleneck(self.pool3(e3))
 
         d3 = self.up3(b)
+        d3 = self._match_size(d3, e3)
         d3 = self.dec3(torch.cat([d3, e3], dim=1))
         d2 = self.up2(d3)
+        d2 = self._match_size(d2, e2)
         d2 = self.dec2(torch.cat([d2, e2], dim=1))
         d1 = self.up1(d2)
+        d1 = self._match_size(d1, e1)
         d1 = self.dec1(torch.cat([d1, e1], dim=1))
 
         return self.out_conv(d1)
